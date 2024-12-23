@@ -23,6 +23,7 @@ import chevron  # to parse Mustache templates
 from pydantic import BaseModel
 import logging
 logger = logging.getLogger("tinytroupe")
+from tinytroupe.environment import TinyWorld
 import tinytroupe.utils as utils
 from tinytroupe.utils import post_init
 from tinytroupe.control import transactional
