@@ -29,7 +29,14 @@ dependencies = [
     "tiktoken",
     "msal",
     "rich", "requests", "chevron",
-    "llama-index", "llama-index-embeddings-huggingface", "llama-index-readers-web", "llama-index-embeddings-azure-openai",
+    # llama-index: use the new modular packages only.
+    # Do NOT add "llama-index" (the old 0.9.x monolith) — it shares file paths
+    # with these packages and its uninstall will corrupt the environment.
+    "llama-index-core>=0.10.0",
+    "llama-index-embeddings-openai",
+    "llama-index-embeddings-azure-openai",
+    "llama-index-embeddings-huggingface",
+    "llama-index-readers-web",
     "pypandoc", "docx", "markdown",
     "jupyter",
     "matplotlib",
