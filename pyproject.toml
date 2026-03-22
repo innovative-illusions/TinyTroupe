@@ -22,9 +22,9 @@ classifiers = [
 ]
 
 dependencies = [
-    "pandas", 
+    "pandas",
     "pytest", "pytest-cov", "pytest-timeout", "pytest-html",
-    "openai >= 1.65", 
+    "openai >= 1.65",
     "httpx",
     "tiktoken",
     "msal",
@@ -34,10 +34,13 @@ dependencies = [
     "jupyter",
     "matplotlib",
     "pydantic>=2.5.0",
-    "pypandoc",
     "textdistance",
     "scipy"
 ]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40.0"]
+all-providers = ["anthropic>=0.40.0"]
 
 [project.urls]
 "Homepage" = "https://github.com/microsoft/tinytroupe"

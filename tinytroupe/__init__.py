@@ -76,71 +76,102 @@ class ConfigManager:
         return candidate
 
     def _initialize_from_config(self):
-        """Initialize default values from config file"""
+        """Initialize default values from config file.
+
+        Resolution order (highest → lowest priority):
+          1. TINYTROUPE_* environment variables (applied by read_config_file)
+          2. CWD config.ini (user overrides)
+          3. Per-provider section, e.g. [ollama], [anthropic]  (provider defaults)
+          4. [LLM] section  (global LLM defaults)
+          5. Hard-coded Python defaults below
+        """
         config = utils.read_config_file()
 
-        self._config["api_type"] = config["OpenAI"].get("API_TYPE", "openai")
-        self._config["azure_api_version"] = config["OpenAI"].get(
-            "AZURE_API_VERSION", "2024-10-21"
-        )
-        self._config["base_url"] = config["OpenAI"].get(
-            "BASE_URL", None
-        )  # by default, we will not use a custom base URL
+        # ------------------------------------------------------------------
+        # Determine the canonical LLM section.
+        # New configs use [LLM]; old configs use [OpenAI] (backward compat).
+        # ------------------------------------------------------------------
+        llm_section = "LLM" if "LLM" in config.sections() else "OpenAI"
 
-        self._config["model"] = config["OpenAI"].get("MODEL", "gpt-4o")
-        self._config["embedding_model"] = config["OpenAI"].get(
-            "EMBEDDING_MODEL", "text-embedding-3-small"
-        )
-        if config["OpenAI"].get("API_TYPE") == "azure":
-            self._config["azure_embedding_model_api_version"] = config["OpenAI"].get(
-                "AZURE_EMBEDDING_MODEL_API_VERSION", "2023-05-15"
-            )
-        self._config["reasoning_model"] = config["OpenAI"].get(
-            "REASONING_MODEL", "o3-mini"
-        )
+        # ------------------------------------------------------------------
+        # Determine active provider and its optional override section.
+        # ------------------------------------------------------------------
+        api_type = config.get(llm_section, "API_TYPE", fallback="openai").lower()
+        self._config["api_type"] = api_type
 
-        self._config["max_completion_tokens"] = int(
-            config["OpenAI"].get("MAX_COMPLETION_TOKENS", "1024")
-        )
-        self._config["temperature"] = config["OpenAI"].getfloat("TEMPERATURE", None)
-        self._config["top_p"] = config["OpenAI"].getfloat("TOP_P", None)
-        self._config["frequency_penalty"] = config["OpenAI"].getfloat(
-            "FREQ_PENALTY", None
-        )
-        self._config["presence_penalty"] = config["OpenAI"].getfloat(
-            "PRESENCE_PENALTY", None
-        )
-        self._config["reasoning_effort"] = config["OpenAI"].get(
-            "REASONING_EFFORT", "high"
-        )
+        # Provider section (e.g. [ollama], [anthropic]) — may not exist
+        prov = api_type  # section name == api_type string
 
-        self._config["num_ctx"] = int(config["OpenAI"].get("NUM_CTX", "32000"))
+        # ------------------------------------------------------------------
+        # Helper lambdas: check provider section first, then [LLM].
+        # ------------------------------------------------------------------
+        def _str(key, default=None):
+            if config.has_option(prov, key):
+                return config.get(prov, key)
+            val = config.get(llm_section, key, fallback=default)
+            # configparser returns empty string for keys with no value
+            return val if val != "" else default
 
-        self._config["timeout"] = float(config["OpenAI"].get("TIMEOUT", "30.0"))
-        self._config["max_attempts"] = float(
-            config["OpenAI"].get("MAX_ATTEMPTS", "0.0")
+        def _bool(key, default=False):
+            if config.has_option(prov, key):
+                return config.getboolean(prov, key)
+            return config.getboolean(llm_section, key, fallback=default)
+
+        def _int(key, default=0):
+            if config.has_option(prov, key):
+                return config.getint(prov, key)
+            return config.getint(llm_section, key, fallback=default)
+
+        def _float(key, default=None):
+            if config.has_option(prov, key):
+                raw = config.get(prov, key)
+            else:
+                raw = config.get(llm_section, key, fallback=None)
+            if raw is None or raw == "":
+                return default
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                return default
+
+        # ------------------------------------------------------------------
+        # LLM / model settings
+        # ------------------------------------------------------------------
+        self._config["azure_api_version"] = _str("AZURE_API_VERSION", "2024-10-21")
+        self._config["base_url"] = _str("BASE_URL", None)
+
+        self._config["model"] = _str("MODEL", "gpt-4o")
+        self._config["embedding_model"] = _str("EMBEDDING_MODEL", "text-embedding-3-small")
+        self._config["azure_embedding_model_api_version"] = _str(
+            "AZURE_EMBEDDING_MODEL_API_VERSION", "2023-05-15"
         )
-        self._config["waiting_time"] = float(config["OpenAI"].get("WAITING_TIME", "1"))
-        self._config["exponential_backoff_factor"] = float(
-            config["OpenAI"].get("EXPONENTIAL_BACKOFF_FACTOR", "5")
-        )
+        self._config["reasoning_model"] = _str("REASONING_MODEL", "o3-mini")
+
+        self._config["max_completion_tokens"] = _int("MAX_COMPLETION_TOKENS", 1024)
+        self._config["temperature"] = _float("TEMPERATURE", None)
+        self._config["top_p"] = _float("TOP_P", None)
+        self._config["frequency_penalty"] = _float("FREQ_PENALTY", None)
+        self._config["presence_penalty"] = _float("PRESENCE_PENALTY", None)
+        self._config["reasoning_effort"] = _str("REASONING_EFFORT", "high")
+        self._config["num_ctx"] = _int("NUM_CTX", 32000)
+
+        self._config["timeout"] = _float("TIMEOUT", 30.0)
+        self._config["max_attempts"] = _float("MAX_ATTEMPTS", 5.0)
+        self._config["waiting_time"] = _float("WAITING_TIME", 1.0)
+        self._config["exponential_backoff_factor"] = _float("EXPONENTIAL_BACKOFF_FACTOR", 5.0)
 
         self._config["max_concurrent_model_calls"] = self._parse_concurrency_limit(
-            config["OpenAI"].get("MAX_CONCURRENT_MODEL_CALLS", None),
+            _str("MAX_CONCURRENT_MODEL_CALLS", None),
             default=4,
         )
 
-        self._config["cache_api_calls"] = config["OpenAI"].getboolean(
-            "CACHE_API_CALLS", False
-        )
-        self._config["cache_file_name"] = config["OpenAI"].get(
-            "CACHE_FILE_NAME", "openai_api_cache.pickle"
-        )
+        self._config["cache_api_calls"] = _bool("CACHE_API_CALLS", False)
+        self._config["cache_file_name"] = _str("CACHE_FILE_NAME", "openai_api_cache.pickle")
+        self._config["max_content_display_length"] = _int("MAX_CONTENT_DISPLAY_LENGTH", 1024)
 
-        self._config["max_content_display_length"] = config["OpenAI"].getint(
-            "MAX_CONTENT_DISPLAY_LENGTH", 1024
-        )
-
+        # ------------------------------------------------------------------
+        # Simulation
+        # ------------------------------------------------------------------
         self._config["parallel_agent_actions"] = config["Simulation"].getboolean(
             "PARALLEL_AGENT_ACTIONS", True
         )
@@ -148,6 +179,9 @@ class ConfigManager:
             "PARALLEL_AGENT_GENERATION", True
         )
 
+        # ------------------------------------------------------------------
+        # Cognition
+        # ------------------------------------------------------------------
         self._config["enable_memory_consolidation"] = config["Cognition"].getboolean(
             "ENABLE_MEMORY_CONSOLIDATION", True
         )
@@ -160,16 +194,19 @@ class ConfigManager:
         self._config["max_episode_length"] = config["Cognition"].getint(
             "MAX_EPISODE_LENGTH", 100
         )
-        self._config["episodic_memory_fixed_prefix_length"] = config[
-            "Cognition"
-        ].getint("EPISODIC_MEMORY_FIXED_PREFIX_LENGTH", 20)
+        self._config["episodic_memory_fixed_prefix_length"] = config["Cognition"].getint(
+            "EPISODIC_MEMORY_FIXED_PREFIX_LENGTH", 20
+        )
         self._config["episodic_memory_lookback_length"] = config["Cognition"].getint(
             "EPISODIC_MEMORY_LOOKBACK_LENGTH", 20
         )
 
-        self._config["action_generator_max_attempts"] = config[
-            "ActionGenerator"
-        ].getint("MAX_ATTEMPTS", 2)
+        # ------------------------------------------------------------------
+        # ActionGenerator
+        # ------------------------------------------------------------------
+        self._config["action_generator_max_attempts"] = config["ActionGenerator"].getint(
+            "MAX_ATTEMPTS", 2
+        )
         self._config["action_generator_enable_quality_checks"] = config[
             "ActionGenerator"
         ].getboolean("ENABLE_QUALITY_CHECKS", False)
@@ -179,17 +216,12 @@ class ConfigManager:
         self._config["action_generator_enable_direct_correction"] = config[
             "ActionGenerator"
         ].getboolean("ENABLE_DIRECT_CORRECTION", False)
-
-        self._config["action_generator_enable_quality_check_for_persona_adherence"] = (
-            config["ActionGenerator"].getboolean(
-                "ENABLE_QUALITY_CHECK_FOR_PERSONA_ADHERENCE", False
-            )
-        )
-        self._config["action_generator_enable_quality_check_for_selfconsistency"] = (
-            config["ActionGenerator"].getboolean(
-                "ENABLE_QUALITY_CHECK_FOR_SELFCONSISTENCY", False
-            )
-        )
+        self._config["action_generator_enable_quality_check_for_persona_adherence"] = config[
+            "ActionGenerator"
+        ].getboolean("ENABLE_QUALITY_CHECK_FOR_PERSONA_ADHERENCE", False)
+        self._config["action_generator_enable_quality_check_for_selfconsistency"] = config[
+            "ActionGenerator"
+        ].getboolean("ENABLE_QUALITY_CHECK_FOR_SELFCONSISTENCY", False)
         self._config["action_generator_enable_quality_check_for_fluency"] = config[
             "ActionGenerator"
         ].getboolean("ENABLE_QUALITY_CHECK_FOR_FLUENCY", False)
@@ -199,19 +231,18 @@ class ConfigManager:
         self._config["action_generator_enable_quality_check_for_similarity"] = config[
             "ActionGenerator"
         ].getboolean("ENABLE_QUALITY_CHECK_FOR_SIMILARITY", False)
-
         self._config["action_generator_continue_on_failure"] = config[
             "ActionGenerator"
         ].getboolean("CONTINUE_ON_FAILURE", True)
-        self._config["action_generator_quality_threshold"] = config[
-            "ActionGenerator"
-        ].getint("QUALITY_THRESHOLD", 2)
-
-        # LOGLEVELS
-        default_loglevel = config["Logging"].get("LOGLEVEL", "INFO").upper()
-        loglevel_console = (
-            config["Logging"].get("LOGLEVEL_CONSOLE", default_loglevel).upper()
+        self._config["action_generator_quality_threshold"] = config["ActionGenerator"].getint(
+            "QUALITY_THRESHOLD", 2
         )
+
+        # ------------------------------------------------------------------
+        # Logging
+        # ------------------------------------------------------------------
+        default_loglevel = config["Logging"].get("LOGLEVEL", "INFO").upper()
+        loglevel_console = config["Logging"].get("LOGLEVEL_CONSOLE", default_loglevel).upper()
         loglevel_file = config["Logging"].get("LOGLEVEL_FILE", default_loglevel).upper()
 
         self._config[ConfigManager.LOGLEVEL_KEY] = default_loglevel
@@ -393,32 +424,46 @@ def get_config(key, override_value=None):
 ## LLaMa-Index configs ########################################################
 # from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
-if config_manager.get("api_type") == "azure":
-    from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
-else:
-    from llama_index.embeddings.openai import OpenAIEmbedding
-
 from llama_index.core import Document, Settings, SimpleDirectoryReader, VectorStoreIndex
 from llama_index.readers.web import SimpleWebPageReader
 
-# this will be cached locally by llama-index, in a OS-dependend location
+# Configure embedding model for llama-index based on active provider.
+# For non-OpenAI providers we fall back to OpenAI embeddings when an
+# OPENAI_API_KEY is available, otherwise we skip embedding setup so that
+# users can configure their preferred embed model separately.
+_api_type = config_manager.get("api_type")
 
-##Settings.embed_model = HuggingFaceEmbedding(
-##    model_name="BAAI/bge-small-en-v1.5"
-##)
+if _api_type == "azure":
+    from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
 
-if config_manager.get("api_type") == "azure":
     llamaindex_openai_embed_model = AzureOpenAIEmbedding(
         model=config_manager.get("embedding_model"),
         deployment_name=config_manager.get("embedding_model"),
         api_version=config_manager.get("azure_embedding_model_api_version"),
         embed_batch_size=10,
     )
-else:
+    Settings.embed_model = llamaindex_openai_embed_model
+
+elif _api_type in ("openai", "groq") or os.getenv("OPENAI_API_KEY"):
+    # openai, groq (uses openai-compatible endpoint), or any provider where
+    # the user also has an OpenAI key available for embeddings
+    from llama_index.embeddings.openai import OpenAIEmbedding
+
     llamaindex_openai_embed_model = OpenAIEmbedding(
         model=config_manager.get("embedding_model"), embed_batch_size=10
     )
-Settings.embed_model = llamaindex_openai_embed_model
+    Settings.embed_model = llamaindex_openai_embed_model
+
+else:
+    # anthropic, ollama, or unknown provider without an OpenAI key:
+    # leave Settings.embed_model at its llama-index default so users can
+    # configure it themselves (e.g. HuggingFaceEmbedding).
+    logging.getLogger("tinytroupe").info(
+        "Skipping OpenAI embedding setup — provider is '%s' and OPENAI_API_KEY "
+        "is not set. Configure Settings.embed_model manually if needed.",
+        _api_type,
+    )
+    llamaindex_openai_embed_model = None
 
 
 ###########################################################################

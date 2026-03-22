@@ -2,6 +2,7 @@ import logging
 
 from tinytroupe import config_manager, utils
 
+from .anthropic_client import AnthropicClient
 from .azure_client import AzureClient
 from .ollama_client import OllamaClient
 from .openai_client import OpenAIClient
@@ -114,7 +115,12 @@ def force_api_cache(cache_api_calls, cache_file_name=None):
         client.set_api_cache(cache_api_calls, cache_file_name)
 
 
-# default client
+# Built-in clients
 register_client("openai", OpenAIClient())
 register_client("azure", AzureClient())
 register_client("ollama", OllamaClient())
+register_client("anthropic", AnthropicClient())
+
+# Groq uses the OpenAI-compatible API; OpenAIClient reads BASE_URL and
+# API_KEY_ENV_VAR from the [groq] config section automatically.
+register_client("groq", OpenAIClient())

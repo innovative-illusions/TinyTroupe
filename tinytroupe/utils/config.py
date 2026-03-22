@@ -1,9 +1,13 @@
 import configparser
 import logging
+import os
 import sys
 import threading
 from datetime import datetime
 from pathlib import Path
+
+# Provider names that get their own config section
+_KNOWN_PROVIDERS = {"openai", "azure", "ollama", "anthropic", "groq"}
 
 ################################################################################
 # Config and startup utilities
@@ -105,6 +109,65 @@ def _apply_logging_levels():
     project_logger.propagate = True
 
 
+def _ensure_llm_section(config: configparser.ConfigParser) -> None:
+    """Ensure a canonical [LLM] section exists.
+
+    For backward compatibility, if a user's config only has [OpenAI] (the old
+    name) but no [LLM], we create [LLM] as an alias so the rest of the code
+    can always read from [LLM].  If both exist, [LLM] already has precedence
+    because configparser merges the two files in load order and [LLM] was
+    written by the newer bundled config.ini.
+    """
+    if "LLM" not in config.sections() and "OpenAI" in config.sections():
+        config.add_section("LLM")
+        for key, value in config.items("OpenAI"):
+            config.set("LLM", key, value)
+
+
+def _apply_env_var_overrides(config: configparser.ConfigParser) -> None:
+    """Apply ``TINYTROUPE_*`` environment variables to the loaded config.
+
+    Two forms are supported:
+
+    * ``TINYTROUPE_<KEY>=value``
+      Overrides ``<KEY>`` in the ``[LLM]`` section.
+      Example: ``TINYTROUPE_MODEL=gpt-4o``
+
+    * ``TINYTROUPE_<PROVIDER>_<KEY>=value``
+      Overrides ``<KEY>`` in the ``[<provider>]`` section.
+      Example: ``TINYTROUPE_OLLAMA_BASE_URL=http://192.168.1.10:11434/v1``
+
+    All matching is case-insensitive on the provider name; the config key is
+    stored in its original case as received from the environment variable.
+    """
+    llm_section = "LLM" if "LLM" in config.sections() else "OpenAI"
+
+    for env_key, env_value in os.environ.items():
+        if not env_key.startswith("TINYTROUPE_"):
+            continue
+
+        suffix = env_key[11:]  # strip the "TINYTROUPE_" prefix
+
+        # Check whether the suffix starts with a known provider name
+        matched_provider: str | None = None
+        matched_key: str = suffix
+        for provider in _KNOWN_PROVIDERS:
+            prefix = provider.upper() + "_"
+            if suffix.upper().startswith(prefix):
+                matched_provider = provider
+                matched_key = suffix[len(prefix):]
+                break
+
+        if matched_provider:
+            if matched_provider not in config.sections():
+                config.add_section(matched_provider)
+            config.set(matched_provider, matched_key, env_value)
+        else:
+            if llm_section not in config.sections():
+                config.add_section(llm_section)
+            config.set(llm_section, suffix, env_value)
+
+
 def read_config_file(use_cache=True, verbose=True) -> configparser.ConfigParser:
     global _config
     if use_cache and _config is not None:
@@ -132,22 +195,20 @@ def read_config_file(use_cache=True, verbose=True) -> configparser.ConfigParser:
                 config_file_path
             )  # this only overrides the values that are present in the custom config
             _config = config
-            return config
         else:
             if verbose:
-                (
-                    print(f"Failed to find custom config on: {config_file_path}")
-                    if verbose
-                    else None
-                )
-                (
-                    print(
-                        "Will use only default values. IF THINGS FAIL, TRY CUSTOMIZING MODEL, API TYPE, etc."
-                    )
-                    if verbose
-                    else None
+                print(f"Failed to find custom config on: {config_file_path}")
+                print(
+                    "Will use only default values. IF THINGS FAIL, TRY CUSTOMIZING MODEL, API TYPE, etc."
                 )
 
+        # Backward compat: normalise [OpenAI] -> [LLM] if needed
+        _ensure_llm_section(config)
+
+        # Apply TINYTROUPE_* environment variable overrides (highest priority)
+        _apply_env_var_overrides(config)
+
+        _config = config
         return config
 
 

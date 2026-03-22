@@ -106,6 +106,11 @@ class OpenAIClient:
     def _setup_from_config(self, timeout=None):
         """
         Sets up the OpenAI API configurations for this client.
+
+        base_url and api_key_env_var are read from config so that
+        OpenAI-compatible providers (Groq, LM Studio, vLLM, …) work
+        without a separate client class — just point BASE_URL and
+        API_KEY_ENV_VAR to the right values in their provider section.
         """
 
         # On Sept./Oct. 2025 I noticed that the OpenAI library was randomly hanging during requests,
@@ -124,9 +129,20 @@ class OpenAIClient:
             )
         )
 
+        # base_url: provider section value → [LLM] value → None (OpenAI default)
+        base_url = config_manager.get("base_url") or os.getenv("OPENAI_BASE_URL") or None
+
+        # api_key_env_var: allows each provider to use its own env var name
+        # e.g. GROQ_API_KEY, instead of always requiring OPENAI_API_KEY.
+        api_key_env_var = config_manager.get("api_key_env_var", "OPENAI_API_KEY")
+        api_key = os.getenv(api_key_env_var) or os.getenv("OPENAI_API_KEY")
+
         # we set max_retries to 0 because we do our own retrying with customized exponential backoff
         self.client = OpenAI(
-            api_key=os.getenv("OPENAI_API_KEY"), max_retries=0, http_client=httpx_client
+            api_key=api_key,
+            base_url=base_url,
+            max_retries=0,
+            http_client=httpx_client,
         )
 
     @config_manager.config_defaults(
