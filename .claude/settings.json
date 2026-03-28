@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv pip:*)",
+      "Bash(\"ttvenv/Scripts/python.exe\" -c \"from llama_index.core import Document, Settings; print\\(''llama_index.core OK''\\)\")",
+      "Bash(grep \"^llama_index$\")",
+      "Bash(\"s:/ACTIVE_PROJECTS/TinyTroupe/ttvenv/Scripts/python.exe\" -c \"import llama_index.core; print\\(llama_index.core.__file__\\)\")",
+      "Bash(\"s:/ACTIVE_PROJECTS/TinyTroupe/ttvenv/Scripts/python.exe\" -c \"import pydantic_core; print\\(pydantic_core.__version__\\)\")",
+      "Bash(\"s:/ACTIVE_PROJECTS/TinyTroupe/ttvenv/Scripts/python.exe\" -c \"import pydantic_core; print\\(''ok''\\)\")",
+      "Bash(\"s:/ACTIVE_PROJECTS/TinyTroupe/ttvenv/Scripts/python.exe\" -c \"from llama_index.core import Document, Settings, SimpleDirectoryReader, VectorStoreIndex; print\\(''llama_index.core OK''\\)\")",
+      "Read(//c/Users/bboan/AppData/Local/uv/cache/archive-v0/dVrohh89vn2928VCMcyQA/pydantic_core/**)",
+      "Bash(s:/ACTIVE_PROJECTS/TinyTroupe/.venv/Scripts/python.exe --version)",
+      "Bash(s:/ACTIVE_PROJECTS/TinyTroupe/ttvenv/Scripts/python.exe --version)",
+      "Bash(grep -E \"^\\\\.venv$|^ttvenv$\")",
+      "Bash(s:/ACTIVE_PROJECTS/TinyTroupe/ttvenv/Scripts/python.exe -c \"import pydantic; print\\(pydantic.__version__\\)\")",
+      "Bash(s:/ACTIVE_PROJECTS/TinyTroupe/ttvenv/Scripts/python.exe -c \"import tinytroupe; print\\(''OK''\\)\")",
+      "Bash(s:/ACTIVE_PROJECTS/TinyTroupe/ttvenv/Scripts/python.exe -c \"import tinytroupe; print\\(''''OK''''\\)\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\bboan\\AppData\\Local\\uv\\cache\\archive-v0\\dVrohh89vn2928VCMcyQA\\pydantic_core"
+    ]
+  }
+}
